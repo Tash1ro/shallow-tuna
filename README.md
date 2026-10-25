@@ -21,6 +21,63 @@ Deploy WireGuard and AmneziaWG VPN servers with per-client exit IP routing.
 
 ## Quick Start
 
+### Install from your machine (one command)
+
+`remote/tuna-install.sh` does the whole server setup over SSH. It logs in as
+root on a fresh Ubuntu server; the argument is a host, an alias from your
+`~/.ssh/config`, or `ssh://host:port`:
+
+```bash
+./remote/tuna-install.sh -u tuna -k ~/.ssh/tuna.pub -K ~/.ssh/admin.pub -p 2222 203.0.113.10
+```
+
+The connection follows your ssh config as is. When it names no `IdentityFile`
+for the host, only the default `~/.ssh/id_*` keys are offered before the
+password prompt, so a full ssh agent cannot run into the server's
+`MaxAuthTries`. Since the last step disables password auth, root must already
+have an authorized key or get one with `-K`; the script refuses otherwise.
+
+It creates the regular user and authorizes the given public key(s) (`-k` for
+the user, `-K` for root, both repeatable), clones the repo into
+that user's home, writes `.env` with the server's primary IP as `exit1`, runs
+`setup-host/{docker,amneziawg,ndpi}-setup.sh`, brings the stack up, and
+finally applies the sshd drop-in with `setup-host/ssh-setup.sh` (port from
+`-p`, listen on all addresses, root login allowed, key auth only). It then
+checks that the new user can log in on the new port before exiting. See
+`--help` for `--wg`, `--sudo`, `--exit-ip`, `-A` (agent forwarding for a
+private repo) and the `TUNA_INSTALL_*` env defaults in `tuna-adm.env`.
+
+When it finishes it prints the `~/.ssh/config` entries for the server, filled
+in from the arguments: the user entry from `-k`, the root entry from `-K`. The
+alias is the host argument (an existing `srv-root` alias gives `srv` and
+`srv-root`), or `-n NAME` when the host is a bare IP. For
+`-n srv -u tuna -k ~/.ssh/tuna.pub -K ~/.ssh/admin.pub -p 2222 203.0.113.10`:
+
+```
+Host srv
+    HostName 203.0.113.10
+    Port 2222
+    User tuna
+    IdentityFile ~/.ssh/tuna
+    IdentitiesOnly yes
+
+Host srv-root
+    HostName 203.0.113.10
+    Port 2222
+    User root
+    IdentityFile ~/.ssh/admin
+    IdentitiesOnly yes
+```
+
+`IdentityFile` is the private half of each `.pub` passed in, so keep the two
+files side by side. `IdentitiesOnly` stops ssh from offering every agent key
+first. Use `srv` for day-to-day work (`TUNA_ADM_SSH_HOST` in
+`tuna-adm.env`) and `srv-root` for re-running the installer or
+`setup-host` scripts. An agent that runs the installer unattended can take
+these blocks from the output as they are.
+
+The manual equivalent follows.
+
 ### 1. Clone and configure
 
 ```bash
@@ -320,6 +377,7 @@ services/
     verify.sh                 # end-to-end verification (via docker compose)
   backup/backup.sh            # workdir/{awg,wg} -> workdir/backups archive (Compose service)
 remote/                       # Client-side scripts (run from your machine)
+  tuna-install.sh             # Full server install over SSH (user, clone, setup-host, sshd)
   tuna-adm.sh                 # SSH tunnels to the admin panels
   tuna-backup.sh              # Run the backup service, download archive via pipe
 ndpi/                         # nDPI .deb packaging (xt-ndpi-dkms + iptables ext)
@@ -333,6 +391,7 @@ setup-host/                   # Host setup scripts
   amneziawg-setup.sh          # install/fix-dkms/status/uninstall the amneziawg module
   patches/                    # amneziawg-dkms compat fix for newer kernels (auto-applied)
   ndpi-setup.sh               # build/install the xt_ndpi DKMS kernel module
+  ssh-setup.sh                # sshd drop-in: port, key auth only; restarts ssh.socket
 docs/
   ndpi.md                     # DPI filtering docs
 ```

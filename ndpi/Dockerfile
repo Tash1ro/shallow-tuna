@@ -15,7 +15,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Map an in-container user to the host UID/GID so artifacts are owned by the
 # invoking user, not root. (debian/control sets Rules-Requires-Root: no, so the
-# package build itself runs fine unprivileged.)
+# package build itself runs fine unprivileged.) The image ships 'ubuntu' as
+# 1000:1000; an already taken UID or GID is shared via -o (non-unique).
 ARG USER_ID=1000
 ARG GROUP_ID=1000
 ARG USER_NAME=builder
@@ -24,10 +25,10 @@ RUN (test "${USER_ID}" != ""  || (echo "ARG USER_ID is empty"; exit 1)) \
     && (test "${GROUP_ID}" != ""  || (echo "ARG GROUP_ID is empty"; exit 1)) \
     && (test "${USER_NAME}" != ""  || (echo "ARG USER_NAME is empty"; exit 1)) \
     && (test "${GROUP_NAME}" != ""  || (echo "ARG GROUP_NAME is empty"; exit 1)) \
-    && NON_UNIQ_FLAG="" \
-    && test "${GROUP_ID}" = "1000" && NON_UNIQ_FLAG="-o" || true \
-    && groupadd -g ${GROUP_ID} $NON_UNIQ_FLAG ${GROUP_NAME} \
-    && useradd -m $NON_UNIQ_FLAG -u ${USER_ID} -g ${GROUP_NAME} ${USER_NAME} \
+    && GROUP_FLAG="$(getent group "${GROUP_ID}" >/dev/null && printf -- -o || true)" \
+    && USER_FLAG="$(getent passwd "${USER_ID}" >/dev/null && printf -- -o || true)" \
+    && groupadd -g "${GROUP_ID}" $GROUP_FLAG "${GROUP_NAME}" \
+    && useradd -m -u "${USER_ID}" $USER_FLAG -g "${GROUP_NAME}" "${USER_NAME}" \
     && mkdir -p /build /artifacts \
     && chown -R ${USER_NAME}:${GROUP_NAME} /build /artifacts
 
