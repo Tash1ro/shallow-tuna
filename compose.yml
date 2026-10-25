@@ -3,10 +3,6 @@ networks:
     ipam:
       config:
         - subnet: 172.100.0.0/24
-  exit2:
-    ipam:
-      config:
-        - subnet: 172.101.0.0/24
 
 services:
   # wg-easy v15 in AmneziaWG mode. Settings (host, WG port, DNS, allowed IPs,
@@ -64,7 +60,6 @@ services:
       - net.ipv6.conf.default.forwarding=1
     networks:
       - exit1
-      - exit2
 
   host-routing:
     build: ./services/host-routing
@@ -110,8 +105,8 @@ services:
       # entry is one exit — drop an entry to leave that exit unblocked, or set
       # NDPI_SOURCE= (explicitly empty) to enforce on ALL forwarded traffic.
       # ('-' not ':-' so an empty value means unscoped, unset means the default)
-      #   exit1 = 172.100.0.0/24    exit2 = 172.101.0.0/24
-      - NDPI_SOURCE=${NDPI_SOURCE-172.100.0.0/24,172.101.0.0/24}
+      #   exit1 = 172.100.0.0/24  (compose.exit2.yml adds exit2 = 172.101.0.0/24)
+      - NDPI_SOURCE=${NDPI_SOURCE-172.100.0.0/24}
     volumes:
       - /lib/modules:/lib/modules:ro
       - ./services/xt-ndpi-rules/manage.sh:/app/manage.sh:ro
@@ -146,11 +141,4 @@ services:
     image: python:3-slim
     networks:
       - exit1
-    entrypoint: ["python3", "-c"]
-
-  ndpi-probe-exit2:
-    profiles: ["verify"]
-    image: python:3-slim
-    networks:
-      - exit2
     entrypoint: ["python3", "-c"]

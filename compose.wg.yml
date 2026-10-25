@@ -51,4 +51,3 @@ services:
       - net.ipv6.conf.default.forwarding=1
     networks:
       - exit1
-      - exit2

@@ -7,6 +7,7 @@ Deploy WireGuard and AmneziaWG VPN servers with per-client exit IP routing.
 - **awg-easy** — wg-easy v15 in AmneziaWG mode (obfuscated WireGuard) with web UI
 - **wg-easy** — Standard WireGuard with web UI
 - **Multi-IP exit routing** — Route different clients through different external IPs
+  (one exit by default; `compose.exit2.yml` adds a second)
 - **Persistent client assignments** — Survive container restarts
 - **Automatic host SNAT** — `host-routing` service manages iptables rules via Docker Compose
 - **DPI filtering (nDPI)** — Drop BitTorrent (or other nDPI-classified protocols)
@@ -15,7 +16,7 @@ Deploy WireGuard and AmneziaWG VPN servers with per-client exit IP routing.
 ## Prerequisites
 
 - Docker and Docker Compose
-- Multiple external IPs on the host (for multi-IP routing)
+- Multiple external IPs on the host (for multi-IP routing with a second exit)
 - SSH access for admin panel tunneling
 
 ## Quick Start
@@ -34,9 +35,9 @@ Edit `.env`:
 # port set later in the awg-easy web UI)
 # AWG_PORT=3127
 
-# Multi-IP routing: gateway:external_ip pairs
+# Exit routing: gateway:external_ip pairs (one per exit network)
 # Tables auto-assigned: 100, 101, 102...
-EXIT_ROUTES=172.100.0.1:1.2.3.4,172.101.0.1:2.3.4.5
+EXIT_ROUTES=172.100.0.1:1.2.3.4
 ```
 
 Server host, DNS, allowed IPs, the admin account and AmneziaWG obfuscation
@@ -44,7 +45,8 @@ params are configured in the awg-easy web UI on first run.
 
 ### 2. Configure additional IPs on the host
 
-Add secondary IP to your network interface. Example for netplan (`/etc/netplan/01-netcfg.yaml`):
+Only needed with more than one exit (see [Adding a second exit](#adding-a-second-exit)).
+Add a secondary IP to your network interface. Example for netplan (`/etc/netplan/01-netcfg.yaml`):
 
 ```yaml
 network:
@@ -89,7 +91,8 @@ Then open:
 
 ### How it works
 
-1. Docker networks `exit1` and `exit2` have subnets `172.100.0.0/24` and `172.101.0.0/24`
+1. Each exit is a Docker network: `exit1` (`172.100.0.0/24`) in `compose.yml`,
+   `exit2` (`172.101.0.0/24`) in the `compose.exit2.yml` overlay
 2. `services/wg-easy/routing-init.sh` creates routing tables inside containers (100, 101, ...)
 3. `host-routing` service adds SNAT rules on the host to map subnets to external IPs
 4. Per-client routing rules send traffic through specific tables
@@ -115,6 +118,47 @@ name it explicitly: `./assign-exit.sh wg-easy list`.
 ```bash
 docker compose exec host-routing sh /app/manage.sh status
 ```
+
+### Adding a second exit
+
+The base stack has a single exit (`exit1`). `compose.exit2.yml` is an overlay
+that adds `exit2` (`172.101.0.0/24`): it attaches `awg-easy` to the network,
+extends the default `NDPI_SOURCE` to both exits and adds the `ndpi-probe-exit2`
+verify helper. Load it together with `compose.yml`:
+
+```bash
+# .envrc (direnv) or exported in the shell
+export COMPOSE_FILE=compose.yml:compose.exit2.yml
+
+# plus the plain-WireGuard overlay, if used
+export COMPOSE_FILE=compose.yml:compose.wg.yml:compose.exit2.yml
+```
+
+Then give the second exit its own external IP in `.env` (the host must have it,
+see [step 2](#2-configure-additional-ips-on-the-host)) and recreate the stack:
+
+```bash
+EXIT_ROUTES=172.100.0.1:1.2.3.4,172.101.0.1:2.3.4.5
+```
+
+```bash
+docker compose up -d
+./assign-exit.sh list      # exit2 is now available
+```
+
+`compose.exit2.yml` only attaches `awg-easy`. To put `wg-easy` on `exit2` as well,
+add the same `networks` entry for it in a `compose.override.yml` (gitignored):
+
+```yaml
+services:
+  wg-easy:
+    networks:
+      - exit2
+```
+
+A third exit follows the same pattern: copy `compose.exit2.yml`, rename the
+network, pick the next subnet (`172.102.0.0/24`) and append one more
+`gateway:external_ip` pair to `EXIT_ROUTES`.
 
 ## DPI filtering — block BitTorrent (and other protocols)
 
@@ -163,13 +207,13 @@ On the `xt-ndpi-rules` service in `compose.yml` (or via `.env`):
 environment:
   - NDPI_DROP=bittorrent                       # protocols (comma list)
   - NDPI_CHAIN=DOCKER-USER                      # chain to apply rules to
-  - NDPI_SOURCE=172.100.0.0/24,172.101.0.0/24   # which exits to enforce on
+  - NDPI_SOURCE=172.100.0.0/24                  # exit subnets to enforce on (comma list)
 ```
 
 Choose which exits enforce blocking (exit1 = `172.100.0.0/24`, exit2 = `172.101.0.0/24`):
 
-- both exits → `NDPI_SOURCE=172.100.0.0/24,172.101.0.0/24`
-- only exit1 → `NDPI_SOURCE=172.100.0.0/24` (exit2 left open)
+- only exit1 → `NDPI_SOURCE=172.100.0.0/24` (the default; with `compose.exit2.yml` this leaves exit2 open)
+- both exits → `NDPI_SOURCE=172.100.0.0/24,172.101.0.0/24` (the default once `compose.exit2.yml` is loaded)
 - all forwarded traffic → `NDPI_SOURCE=` (empty)
 
 Re-apply with `docker compose up -d xt-ndpi-rules`.
@@ -261,6 +305,7 @@ and clones that fingerprint instead.
 .env.example                  # Example configuration
 compose.yml                   # Container definitions (AmneziaWG stack)
 compose.wg.yml                # Optional overlay: plain WireGuard wg-easy service
+compose.exit2.yml             # Optional overlay: second exit network (exit2)
 .envrc.example                # direnv example selecting the compose files
 services/
   wg-easy/routing-init.sh     # Container entrypoint for routing tables

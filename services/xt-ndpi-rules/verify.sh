@@ -16,7 +16,8 @@ set -uo pipefail
 #   4. Source scoping: NDPI_SOURCE restricts the rule to one exit subnet.
 #   5. Real exit-routed traffic: a container on the exit1 subnet sends a
 #      BitTorrent handshake to the internet; the forwarded packet is caught by
-#      the exit1 DOCKER-USER rule while exit2 stays untouched (needs internet).
+#      the exit1 DOCKER-USER rule. With compose.exit2.yml loaded, also checks
+#      that exit2 stays untouched when only exit1 is scoped (needs internet).
 #
 # Requirements (Ubuntu 24.04 TEST host — it adds/removes transient iptables
 # rules): docker + compose, python3, xt_ndpi loaded
@@ -233,9 +234,13 @@ svc_rm
 # ndpi-probe-exit1 / -exit2 run on the real exit networks and send a BitTorrent
 # handshake out to the internet — FORWARDED by the host, so it traverses
 # DOCKER-USER sourced from that exit's subnet, exactly like a VPN client.
-# Proves each exit's rule catches its OWN traffic, and that one exit can be
-# enforced while the other is left open.
+# Proves each exit's rule catches its OWN traffic, and — when exit2 is loaded
+# (compose.exit2.yml) — that one exit can be enforced while the other is left open.
 hdr "5. Real exit-routed traffic via DOCKER-USER (per-exit)"
+
+HAS_EXIT2=0
+dc --profile verify config --services 2>/dev/null | grep -qx ndpi-probe-exit2 && HAS_EXIT2=1
+[ "$HAS_EXIT2" = 1 ] && echo "  exits: exit1 + exit2" || echo "  exits: exit1 only (load compose.exit2.yml to test per-exit scoping)"
 
 # warm up the probe image once; if unavailable -> skip the whole section
 ( cd "$COMPOSE_DIR" && $DC compose --profile verify pull -q ndpi-probe-exit1 ) >/dev/null 2>&1
@@ -245,6 +250,18 @@ INET="$(run_probe ndpi-probe-exit1)"
 
 if [ "$PROBE_OK" = 0 ]; then
     echo "  SKIP: probe image unavailable or no internet from the exit container"
+elif [ "$HAS_EXIT2" = 0 ]; then
+    echo "  [A] NDPI_SOURCE = exit1 -> exit1 caught by its own rule"
+    svc_up DOCKER-USER "172.100.0.0/24"; sleep 3
+    IPT="$(docker_user_ipt | tr -d '[:space:]')"
+    svc_exec "$IPT" -Z DOCKER-USER >/dev/null
+    S1="$(run_probe ndpi-probe-exit1)"; sleep 1
+    svc_exec "$IPT" -nvL DOCKER-USER 2>/dev/null | grep ndpi | sed 's/^/    /'
+    A1="$(du_pkts "$IPT" '172.100.0.0/24')"
+    echo "    exit1 src $(awk '/SRC/{print $2;exit}' <<<"$S1") -> exit1 rule ${A1:-0} pkts"
+    { [ "${A1:-0}" -gt 0 ] 2>/dev/null; } \
+        && ok "exit1 caught on its own DOCKER-USER rule" \
+        || no "exit1 was not caught (${A1:-0} pkts)"
 else
     echo "  [A] NDPI_SOURCE = both exits -> each exit caught by its own rule"
     svc_up DOCKER-USER "172.100.0.0/24,172.101.0.0/24"; sleep 3

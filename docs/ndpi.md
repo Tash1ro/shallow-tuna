@@ -57,23 +57,24 @@ On the `xt-ndpi-rules` service in `compose.yml`:
 environment:
   - NDPI_CHAIN=DOCKER-USER                       # chain to apply rules to
   - NDPI_DROP=bittorrent                         # nDPI protocols (comma list)
-  - NDPI_SOURCE=172.100.0.0/24,172.101.0.0/24    # which exits to enforce on
+  - NDPI_SOURCE=172.100.0.0/24                   # exit subnets to enforce on (comma list)
 ```
 
-`NDPI_SOURCE` scopes the rule to **source subnets** so it only touches VPN
-traffic, not everything forwarded. Because traffic is MASQUERADEd to its exit
-subnet inside the container, the source seen on `DOCKER-USER` is the exit
-network — so each subnet = one exit:
+`NDPI_SOURCE` is a comma-separated list of **source subnets**; one rule is
+installed per subnet, so the drop only touches VPN traffic, not everything
+forwarded. Because traffic is MASQUERADEd to its exit subnet inside the
+container, the source seen on `DOCKER-USER` is the exit network — so each
+subnet = one exit:
 
-| Exit  | Subnet            |
-|-------|-------------------|
-| exit1 | `172.100.0.0/24`  |
-| exit2 | `172.101.0.0/24`  |
+| Exit  | Subnet            | Defined in          |
+|-------|-------------------|---------------------|
+| exit1 | `172.100.0.0/24`  | `compose.yml`       |
+| exit2 | `172.101.0.0/24`  | `compose.exit2.yml` |
 
 **Choose which exits enforce blocking** by listing their subnets:
 
-- both exits → `NDPI_SOURCE=172.100.0.0/24,172.101.0.0/24`
-- only exit1 → `NDPI_SOURCE=172.100.0.0/24`
+- exit1 only (the default) → `NDPI_SOURCE=172.100.0.0/24`
+- both exits (default once `compose.exit2.yml` is loaded) → `NDPI_SOURCE=172.100.0.0/24,172.101.0.0/24`
 - everything forwarded (not just VPN) → `NDPI_SOURCE=` (empty)
 
 After changing any of these, `docker compose up -d xt-ndpi-rules` to re-apply.

@@ -1,0 +1,23 @@
+# Overlay: second exit network (exit2) on top of the single-exit base stack.
+# Load with compose.yml (see README "Adding a second exit"): COMPOSE_FILE=compose.yml:compose.exit2.yml
+services:
+  awg-easy:
+    networks:
+      - exit2
+
+  xt-ndpi-rules:
+    environment:
+      - NDPI_SOURCE=${NDPI_SOURCE-172.100.0.0/24,172.101.0.0/24}
+
+  ndpi-probe-exit2:
+    profiles: ["verify"]
+    image: python:3-slim
+    networks:
+      - exit2
+    entrypoint: ["python3", "-c"]
+
+networks:
+  exit2:
+    ipam:
+      config:
+        - subnet: 172.101.0.0/24
