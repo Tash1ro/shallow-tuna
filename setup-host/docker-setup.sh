@@ -58,7 +58,14 @@ REPO
 
     echo ""
     echo "── Enabling and starting Docker ──"
-    systemctl enable --now docker
+    # Swapping a preinstalled docker.io (some VPS images ship it) for docker-ce
+    # can leave docker.socket failed; dockerd -H fd:// then exits with "no
+    # sockets found via socket activation". Clear that and start the socket first.
+    systemctl daemon-reload
+    systemctl reset-failed docker.socket docker.service 2>/dev/null || true
+    systemctl enable --now docker.socket
+    systemctl enable docker
+    systemctl restart docker
 
     echo ""
     echo "── Adding current sudo user to docker group ──"
