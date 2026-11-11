@@ -100,6 +100,26 @@ EXIT_ROUTES=172.100.0.1:1.2.3.4
 Server host, DNS, allowed IPs, the admin account and AmneziaWG obfuscation
 params are configured in the awg-easy web UI on first run.
 
+#### IPv6
+
+The stack has no IPv6 exit, so both VPN containers run with
+`DISABLE_IPV6=true` (override in `.env`). wg-easy then:
+
+- leaves the IPv6 address out of `Address` in the interface and client configs;
+- removes the `ip6tables` rules from the PostUp/PostDown hooks in its DB on
+  start (this persists if you later set `DISABLE_IPV6=false`).
+
+The flag does **not** touch DNS or Allowed IPs — these come from the web UI:
+
+- **DNS:** use IPv4 servers only (e.g. `1.1.1.1`).
+- **Allowed IPs:** keep `0.0.0.0/0, ::/0`. With `::/0` the client's IPv6
+  traffic goes into the tunnel and is dropped on the server; without it, on
+  IPv6-enabled networks (mobile) it bypasses the VPN.
+
+Configs already on devices keep their IPv6 address. They still work over IPv4
+(the server drops their IPv6 packets), but re-import them (QR or file) to get
+a clean config.
+
 ### 2. Configure additional IPs on the host
 
 Only needed with more than one exit (see [Adding a second exit](#adding-a-second-exit)).
@@ -143,6 +163,15 @@ ssh -L 51831:127.0.0.1:51831 user@server
 Then open:
 - http://localhost:51821 — AmneziaWG
 - http://localhost:51831 — WireGuard
+
+Or let `remote/tuna-adm.sh` manage background tunnels from your machine (SSH
+host from `TUNA_ADM_SSH_HOST` in `remote/tuna-adm.env`):
+
+```bash
+./remote/tuna-adm.sh awg start    # awg | wg | all; start | stop | status
+```
+
+Step-by-step guide with troubleshooting (in Russian): [docs/split-ip.md](docs/split-ip.md#доступ-к-админке-через-127001).
 
 ## Multi-IP Exit Routing
 
@@ -394,6 +423,7 @@ setup-host/                   # Host setup scripts
   ssh-setup.sh                # sshd drop-in: port, key auth only; restarts ssh.socket
 docs/
   ndpi.md                     # DPI filtering docs
+  split-ip.md                 # Two IPv4: separate ingress and egress, AmneziaWG 3.1 (in Russian)
 ```
 
 ## Ports

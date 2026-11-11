@@ -22,6 +22,10 @@ services:
       # otherwise. Set OVERRIDE_AUTO_AWG=wg to run plain WireGuard.
       - EXPERIMENTAL_AWG=true
       - OVERRIDE_AUTO_AWG=awg
+      # No IPv6 exit (host-routing SNATs IPv4 only): drop the IPv6 address
+      # from the interface and client configs. Keep ::/0 in the UI's Allowed
+      # IPs so client IPv6 is blackholed in the tunnel instead of leaking.
+      - DISABLE_IPV6=${DISABLE_IPV6:-true}
       - EXIT_ROUTES=${EXIT_ROUTES:-}
     volumes:
       - ./workdir/awg:/etc/wireguard

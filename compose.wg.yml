@@ -16,6 +16,8 @@ services:
     command: [ "/usr/bin/dumb-init", "node", "server/index.mjs" ]
     environment:
       - INSECURE=true
+      # Same as awg-easy in compose.yml: no IPv6 in interface/client configs
+      - DISABLE_IPV6=${DISABLE_IPV6:-true}
       - EXIT_ROUTES=${EXIT_ROUTES:-}
     volumes:
       - ./workdir/wg:/etc/wireguard
