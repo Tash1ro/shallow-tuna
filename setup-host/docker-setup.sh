@@ -59,13 +59,17 @@ REPO
     echo ""
     echo "── Enabling and starting Docker ──"
     # Swapping a preinstalled docker.io (some VPS images ship it) for docker-ce
-    # can leave docker.socket failed; dockerd -H fd:// then exits with "no
-    # sockets found via socket activation". Clear that and start the socket first.
+    # can leave docker.socket failed, or still "active" from docker.io but with
+    # no listening fd ("socket unit configuration has changed while unit has been
+    # running"); dockerd -H fd:// then exits with "no sockets found via socket
+    # activation". 'enable --now' is a no-op on an active unit, so stop both
+    # units and start the socket before the service.
     systemctl daemon-reload
+    systemctl stop docker.service docker.socket 2>/dev/null || true
     systemctl reset-failed docker.socket docker.service 2>/dev/null || true
-    systemctl enable --now docker.socket
-    systemctl enable docker
-    systemctl restart docker
+    systemctl enable docker.socket docker
+    systemctl start docker.socket
+    systemctl start docker
 
     echo ""
     echo "── Adding current sudo user to docker group ──"
